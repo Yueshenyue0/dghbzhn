@@ -26,7 +26,6 @@ class AnnouncementService {
       final sp = await SharedPreferences.getInstance();
       if (sp.getString('tm_seen_ann') == hash) return false; // 这条已看过
       if (!context.mounted) return false;
-      await sp.setString('tm_seen_ann', hash);
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -45,6 +44,8 @@ class AnnouncementService {
           ],
         ),
       );
+      // 弹窗关闭后才标记：中途强杀下次仍会再弹
+      await sp.setString('tm_seen_ann', hash);
       return true;
     } catch (_) {
       return false; // 任何异常都不打扰使用
