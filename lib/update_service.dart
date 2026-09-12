@@ -13,7 +13,7 @@ class UpdateService {
   static final UpdateService instance = UpdateService._();
 
   String? _apkUrl;
-  String? _publishedAt;
+  String? _versionTag; // 用于去重的版本标识
   String _lastError = '';
 
   /// 上次检查的错误描述（空 = 成功）
@@ -44,17 +44,15 @@ Future<bool> checkAndPrompt(BuildContext context, {bool manual = false}) async {
         return true;
       }
       _apkUrl = apk['browser_download_url'] as String?;
-      // 用 asset 的 updated_at 作为版本标识（Canary published_at 恒定不变）
-      _publishedAt = (apk['updated_at'] ??
-              data['published_at'] ??
-              data['created_at'] ??
-              '')
-          as String;
+      // 用 asset digest (SHA-256) 做版本去重：
+      // content 变了 digest 才变；updated_at 每次 CI 重建都刷新不能用；
+      // release body 里暂无版本号，用 digest 最可靠
+      _versionTag = (apk['digest'] as String? ?? '').trim();
 
       // 与本地已见版本比较（下载成功后才记录）；每次启动都会重新检测
       final sp = await SharedPreferences.getInstance();
       final seen = sp.getString('tm_seen_canary');
-      if (seen == _publishedAt) {
+      if (seen == _versionTag) {
         // 已是最新：不弹强制框（手动检查时由 about 页给反馈）
         _lastError = '';
         return false;
@@ -137,7 +135,7 @@ Future<bool> checkAndPrompt(BuildContext context, {bool manual = false}) async {
         canPop: false,
         child: _UpdateDialog(
           apkUrl: _downloadUrl,
-          publishedAt: _publishedAt!,
+          publishedAt: _versionTag!,
         ),
       ),
     );
@@ -160,9 +158,15 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   bool _downloading = false;
   bool _done = false;
   String? _error;
+  String? _apkPath; // 下载完成后的本地路径，给权限后直接安装
 
   Future<void> _startDownload() async {
-    if (_downloading || _done) return;
+    if (_downloading) return;
+    // 如果已下载完毕，直接走安装（权限回来后的场景）
+    if (_done && _apkPath != null) {
+      await _triggerInstall(_apkPath!);
+      return;
+    }
     setState(() {
       _downloading = true;
       _error = null;
@@ -195,6 +199,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       await sink.close();
       if (received < 1024) throw Exception('文件过小，可能被劫持');
       _done = true;
+      _apkPath = file.path;
       if (!mounted) return;
       final sp = await SharedPreferences.getInstance();
       await sp.setString('tm_seen_canary', widget.publishedAt);
@@ -224,14 +229,20 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       if (!mounted) return;
       final c = code is int ? code : 3;
       if (c == 0) {
-        setState(() => _statusText = '已打开安装界面，请确认安装');
-      } else if (c == 1) {
         setState(() {
           _downloading = false;
-          _error = '安装包文件不存在，请重试';
+          _statusText = '已打开安装界面，请确认安装';
+        });
+      } else if (c == 1) {
+        setState(() {
+          _done = false;
+          _apkPath = null;
+          _downloading = false;
+          _error = '安装包文件不存在，请重新下载';
           _statusText = '点击重试';
         });
       } else if (c == 2) {
+        // 需授权：_done/_apkPath 保留，用户回来后点"安装"直接调起
         setState(() {
           _downloading = false;
           _error = null;

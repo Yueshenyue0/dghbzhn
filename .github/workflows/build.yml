@@ -41,7 +41,7 @@ jobs:
         run: flutter create . --project-name tempmail --org com.eri --platforms android
 
       - name: Inject signature guard + install/sig channels
-        run: python3 scripts/inject_signature_guard.py
+        run: python3 scripts/inject_install_channel.py
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

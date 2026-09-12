@@ -234,7 +234,7 @@ extern "C" __attribute__((visibility("default"))) const char* embedded_token() {
 
 // 原生核心版本标记（用于运行时确认 SO 已加载）
 extern "C" __attribute__((visibility("default"))) const char* native_version() {
-  return "3";
+  return "5";
 }
 
 // 更新检查相关端点（与 API 一样藏进 SO）
