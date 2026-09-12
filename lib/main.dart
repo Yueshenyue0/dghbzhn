@@ -6,6 +6,7 @@ import 'mail_api.dart';
 import 'device_security.dart';
 import 'proxy_guard.dart';
 import 'clone_guard.dart';
+import 'announcement_service.dart';
 import 'pages/generator_page.dart';
 import 'pages/inbox_page.dart';
 import 'update_service.dart';
@@ -105,9 +106,12 @@ class _HomePageState extends State<HomePage> {
       _token = token;
       _addr = addr;
     });
-    // 强制更新检查优先于捐赠弹窗
+    // 强制更新检查优先于公告/捐赠弹窗
     final updating = await UpdateService.instance.checkAndPrompt(context);
     if (updating || !mounted) return;
+    // 公告（gg.txt 有内容且未看过才弹）
+    final announced = await AnnouncementService.instance.checkAndShow(context);
+    if (announced || !mounted) return;
     _maybeDonateDialog();
   }
 

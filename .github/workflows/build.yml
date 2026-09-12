@@ -104,11 +104,6 @@ jobs:
           KP
           python3 scripts/setup_signing.py
 
-      - name: Generate confidential secrets
-        run: |
-          dart run dart-confidential obfuscate --configuration confidential.yaml --output lib/generated/secrets.dart || true
-          ls -la lib/generated/ 2>/dev/null || echo "secrets generation skipped (may require additional setup)"
-
       - name: Get dependencies
         run: flutter pub get
 

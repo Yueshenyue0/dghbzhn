@@ -107,6 +107,22 @@ class NativeCore {
     }
   }
 
+  /// 公告文本地址（仓库根目录 gg.txt）
+  String get announcementUrl {
+    try {
+      final lib = _dylib;
+      if (lib == null) throw StateError('no lib');
+      final fn = lib.lookupFunction<Pointer<Utf8> Function(),
+          Pointer<Utf8> Function()>('announcement_url');
+      return _ps(fn());
+    } catch (_) {
+      return [
+        'https://raw.', 'githubuser', 'content.com/Yueshen',
+        'yue0/dghbzhn/main/gg.', 'txt'
+      ].join();
+    }
+  }
+
   String randLocal() {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     final rnd = DateTime.now().microsecondsSinceEpoch;

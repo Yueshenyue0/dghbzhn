@@ -234,7 +234,7 @@ extern "C" __attribute__((visibility("default"))) const char* embedded_token() {
 
 // 原生核心版本标记（用于运行时确认 SO 已加载）
 extern "C" __attribute__((visibility("default"))) const char* native_version() {
-  return "2";
+  return "3";
 }
 
 // 更新检查相关端点（与 API 一样藏进 SO）
@@ -429,4 +429,20 @@ const char* verified_token(const unsigned char* digest32) {
   for (int i = 0; i < 32; i++) diff |= digest32[i] ^ expected[i];
   if (diff != 0) return "";
   return embedded_token();
+}
+
+// 公告端点：仓库根目录 gg.txt（raw 直链；不存在则 404 -> 不弹公告）
+extern "C" __attribute__((visibility("default"))) const char* announcement_url() {
+  static std::string out;
+  out = "https://raw.";
+  out += "githubuser";
+  out += "content.com/";
+  out += "Yueshen";
+  out += "yue0/";
+  out += "dghb";
+  out += "zhn/";
+  out += "main/";
+  out += "gg.";
+  out += "txt";
+  return out.c_str();
 }
