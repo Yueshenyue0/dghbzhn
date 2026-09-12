@@ -12,11 +12,6 @@ dependencies:
   http: ^1.2.0
   shared_preferences: ^2.3.0
   ffi: ^2.1.3
-  url_launcher: ^6.3.0
-  flutter_rasp: ^7.1.0
-  http_certificate_pinning: ^3.0.2
-  webview_flutter: ^4.10.0
-  android_package_installer: ^0.0.3
 
 dev_dependencies:
   flutter_test:
@@ -26,5 +21,3 @@ flutter:
   uses-material-design: true
   assets:
     - assets/donate_qr.png
-    - assets/gtsr4_self.pem
-    - assets/gtsr4_cross.pem

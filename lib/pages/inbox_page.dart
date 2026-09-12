@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import '../mail_api.dart';
 
 /// Tab2: 收件箱（5s 自动刷新 + 卡片列表）
@@ -61,7 +59,7 @@ class _InboxPageState extends State<InboxPage> {
       } else if (d['_status'] == 204) {
         _error = null;
       } else if (d['_status'] == 401) {
-        _error = '认证失败（token 未生效，请重装最新版）';
+        _error = '认证失败，请检查 token';
       } else {
         _error = '错误 ${d['_status']}: ${d['error'] ?? ''}';
       }
@@ -163,7 +161,7 @@ String? _field(Map<String, dynamic> d, List<String> names) {
   return null;
 }
 
-/// 邮件详情页：WebView 渲染 HTML 正文，完整显示原邮件
+/// 邮件详情页（纯 Flutter，无 WebView，无第三方依赖）
 class EmailDetailPage extends StatefulWidget {
   final String emailId;
   final String? token;
@@ -176,8 +174,6 @@ class EmailDetailPage extends StatefulWidget {
 class _EmailDetailPageState extends State<EmailDetailPage> {
   Map<String, dynamic>? _detail;
   String? _error;
-  WebViewController? _webCtrl;
-  bool _useHtmlView = true;
 
   @override
   void initState() {
@@ -186,71 +182,16 @@ class _EmailDetailPageState extends State<EmailDetailPage> {
   }
 
   Future<void> _load() async {
-    final d =
-        await MailApi.instance.emailDetail(widget.emailId, token: widget.token);
+    final d = await MailApi.instance.emailDetail(widget.emailId, token: widget.token);
     if (!mounted) return;
     setState(() {
       if (d['_status'] == 200) {
         _detail = d;
         _error = null;
-        _initWeb(d);
       } else {
         _error = '加载失败: ${d['error'] ?? d['_status']}';
       }
     });
-  }
-
-  void _initWeb(Map<String, dynamic> d) {
-    final html = _field(d, ['html_body', 'html']);
-    final text = _field(d, ['text_body', 'text']);
-    // 决定渲染源：HTML 优先，没有就用 text 包一层
-    String body;
-    if (html != null && html.trim().isNotEmpty) {
-      body = html;
-    } else if (text != null && text.trim().isNotEmpty) {
-      body = '<pre style="white-space:pre-wrap;word-break:break-word;'
-          'font-family:sans-serif;font-size:15px;color:#1a1a1a;margin:0;">'
-          '${_escapeHtml(text)}</pre>';
-    } else {
-      return;
-    }
-    final page = _wrapDocument(d, body);
-    final ctrl = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.disabled)
-      ..setNavigationDelegate(NavigationDelegate(
-        onNavigationRequest: (req) {
-          final url = req.url;
-          // 邮件内链接全部外开浏览器，不在 WebView 内跳转
-          if (url.startsWith('http://') || url.startsWith('https://')) {
-            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-            return NavigationDecision.prevent;
-          }
-          return NavigationDecision.navigate;
-        },
-      ))
-      ..loadHtmlString(page, baseUrl: 'https://mail.cx');
-    setState(() => _webCtrl = ctrl);
-  }
-
-  static String _escapeHtml(String s) => s
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
-
-  /// 给邮件 HTML 包一层适配移动端的样式（宽度自适应、暗色跟随暂不做，邮件原样）
-  static String _wrapDocument(Map<String, dynamic> d, String body) {
-    return '''
-<!doctype html>
-<html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  html,body{margin:0;padding:0;background:#ffffff;}
-  body{font-family:sans-serif;-webkit-text-size-adjust:100%;}
-  img{max-width:100%!important;height:auto;}
-  table{max-width:100%!important;}
-  a{color:#1565C0;}
-</style>
-</head><body>$body</body></html>''';
   }
 
   Future<void> _delete() async {
@@ -260,27 +201,19 @@ class _EmailDetailPageState extends State<EmailDetailPage> {
         title: const Text('删除邮件'),
         content: const Text('确定删除这封邮件？'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
         ],
       ),
     );
     if (ok != true) return;
-    final d = await MailApi.instance
-        .deleteEmail(widget.emailId, token: widget.token);
+    final d = await MailApi.instance.deleteEmail(widget.emailId, token: widget.token);
     if (!mounted) return;
-    final st = d['_status'];
-    if (st == 200 || st == 204) {
+    if (d['_status'] == 200 || d['_status'] == 204) {
       Navigator.pop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('删除失败: ${d['error'] ?? st}')),
+        SnackBar(content: Text('删除失败: ${d['error'] ?? d['_status']}')),
       );
     }
   }
@@ -292,75 +225,72 @@ class _EmailDetailPageState extends State<EmailDetailPage> {
       appBar: AppBar(
         title: const Text('邮件详情'),
         actions: [
-          if (d != null && _webCtrl != null)
-            IconButton(
-              icon: const Icon(Icons.text_fields),
-              tooltip: '纯文本视图',
-              onPressed: () => setState(() => _useHtmlView = !_useHtmlView),
-            ),
-          IconButton(
-              icon: const Icon(Icons.delete_outline), onPressed: _delete),
+          IconButton(icon: const Icon(Icons.delete_outline), onPressed: _delete),
         ],
       ),
       body: _error != null
           ? Center(child: Text(_error!))
           : d == null
               ? const Center(child: CircularProgressIndicator())
-              : Column(
+              : ListView(
+                  padding: const EdgeInsets.all(12),
                   children: [
-                    // 头部信息区
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(_field(d, ['subject']) ?? '(无主题)',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 6),
-                          Text('From: ${_field(d, ['from', 'from_name', 'from_email']) ?? '?'}',
-                              style: Theme.of(context).textTheme.bodySmall),
-                          Text('To: ${_field(d, ['to', 'to_email']) ?? '?'}',
-                              style: Theme.of(context).textTheme.bodySmall),
-                          Text('Date: ${_field(d, ['date', 'created_at']) ?? '?'}',
-                              style: Theme.of(context).textTheme.bodySmall),
-                        ],
+                    // 头部信息
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _field(d, ['subject']) ?? '(无主题)',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+                            _infoRow('From', _field(d, ['from', 'from_name', 'from_email'])),
+                            _infoRow('To', _field(d, ['to', 'to_email'])),
+                            _infoRow('Date', _field(d, ['date', 'created_at'])),
+                          ],
+                        ),
                       ),
                     ),
-                    // 正文
-                    Expanded(
-                      child: _useHtmlView && _webCtrl != null
-                          ? WebViewWidget(controller: _webCtrl!)
-                          : _plainTextBody(d),
+                    const SizedBox(height: 12),
+                    // 正文（text 优先，无 text 时粗略去 HTML 标签显示）
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(_bodyText(d)),
+                      ),
                     ),
                   ],
                 ),
     );
   }
 
-  Widget _plainTextBody(Map<String, dynamic> d) {
+  Widget _infoRow(String label, String? value) {
+    if (value == null || value.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 56,
+            child: Text('$label:', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          ),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+    );
+  }
+
+  String _bodyText(Map<String, dynamic> d) {
     final text = _field(d, ['text_body', 'text']);
-    if (text != null && text.isNotEmpty) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(12),
-        child: SelectableText(text),
-      );
-    }
+    if (text != null && text.isNotEmpty) return text;
     final html = _field(d, ['html_body', 'html']);
-    if (html != null && html.isNotEmpty) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(12),
-        child: SelectableText(_stripHtml(html)),
-      );
-    }
-    return const Center(child: Text('（空正文）'));
+    if (html != null && html.isNotEmpty) return _stripHtml(html);
+    return '(空正文)';
   }
 
   static String _stripHtml(String html) {
