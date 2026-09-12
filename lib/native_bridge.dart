@@ -79,7 +79,7 @@ class NativeCore {
           Pointer<Utf8> Function()>('update_api_url');
       return _ps(fn());
     } catch (_) {
-      return ['https://api.', 'github.', 'com/repos/Yueshen', 'yue0/tempmail/releases/tags/Can', 'ary'].join();
+      return ['https://api.', 'github.', 'com/repos/Yueshen', 'yue0/dghbzhn/releases/tags/Can', 'ary'].join();
     }
   }
 
@@ -91,7 +91,7 @@ class NativeCore {
           Pointer<Utf8> Function()>('update_page_url');
       return _ps(fn());
     } catch (_) {
-      return ['https://git', 'hub.com/Yueshen', 'yue0/tempmail/releases/tag/Can', 'ary'].join();
+      return ['https://git', 'hub.com/Yueshen', 'yue0/dghbzhn/releases/tag/Can', 'ary'].join();
     }
   }
 

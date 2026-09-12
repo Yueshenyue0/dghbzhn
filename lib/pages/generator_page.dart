@@ -184,7 +184,7 @@ class AboutPage extends StatelessWidget {
       await sp.remove('tm_seen_canary');
     } catch (_) {}
     if (!context.mounted) return;
-    final prompted = await UpdateService.instance.checkAndPrompt(context);
+    final prompted = await UpdateService.instance.checkAndPrompt(context, manual: true);
     if (!prompted && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('当前已是最新版本')),

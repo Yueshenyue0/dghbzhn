@@ -246,8 +246,8 @@ extern "C" __attribute__((visibility("default"))) const char* update_api_url() {
   out += "repos/";
   out += "Yueshen";
   out += "yue0/";
-  out += "temp";
-  out += "mail/";
+  out += "dghb";
+  out += "zhn/";
   out += "releases/tags/";
   out += "Can";
   out += "ary";
@@ -259,8 +259,8 @@ extern "C" __attribute__((visibility("default"))) const char* update_page_url() 
   out = "https://";
   out += "git";
   out += "hub.com/Yueshen";
-  out += "yue0/temp";
-  out += "mail/releases/tag/";
+  out += "yue0/dghb";
+  out += "zhn/releases/tag/";
   out += "Can";
   out += "ary";
   return out.c_str();

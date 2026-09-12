@@ -19,11 +19,14 @@ class UpdateService {
   /// 上次检查的错误描述（空 = 成功）
   String get lastError => _lastError;
 
-  Future<bool> checkAndPrompt(BuildContext context) async {
+  /// 检查更新
+/// manual=false（启动自动检查）：任何失败都静默跳过，不打扰使用
+/// manual=true （关于页手动点）：失败时弹窗显示具体原因
+Future<bool> checkAndPrompt(BuildContext context, {bool manual = false}) async {
     try {
       final data = await _fetchRelease();
       if (data == null) {
-        // 检查失败也要弹窗告知（此前静默跳过 = "没有弹窗"）
+        if (!manual) return false; // 启动时静默
         if (!context.mounted) return false;
         await _showCheckFailedDialog(context);
         return true;
@@ -35,6 +38,7 @@ class UpdateService {
       );
       if (apk == null) {
         _lastError = 'Canary 里没有 APK 文件';
+        if (!manual) return false;
         if (!context.mounted) return false;
         await _showCheckFailedDialog(context);
         return true;
@@ -60,8 +64,8 @@ class UpdateService {
       return true;
     } catch (e) {
       _lastError = '$e';
-      if (context.mounted) await _showCheckFailedDialog(context);
-      return true;
+      if (manual && context.mounted) await _showCheckFailedDialog(context);
+      return manual;
     }
   }
 
