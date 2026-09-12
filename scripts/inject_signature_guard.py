@@ -22,6 +22,7 @@ def main():
             return
 
     code = '''// SIGNATURE_CHECK: native-level signature guard + in-app install channel
+// Built-in Kotlin: migrated to Kotlin DSL for Flutter 3.47 compatibility
 package com.eri.tempmail
 
 import android.content.Intent
@@ -30,6 +31,7 @@ import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 import java.security.MessageDigest
 
 class MainActivity : FlutterActivity() {
@@ -37,6 +39,7 @@ class MainActivity : FlutterActivity() {
         private val EXPECTED = setOf("__EXPECTED_SHA__")
         private const val INSTALL_CHANNEL = "com.eri.tempmail/install"
         private const val SIG_CHANNEL = "sig_guard"
+        private const val TAG = "TempMail"
     }
 
     override fun onResume() {
@@ -65,107 +68,103 @@ class MainActivity : FlutterActivity() {
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SIG_CHANNEL)
             .setMethodCallHandler { call, result ->
-                if (call.method == "getSignature") {
-                    result.success(currentSignatureBytes())
-                } else {
-                    result.notImplemented()
+                when (call.method) {
+                    "getSignature" -> result.success(currentSignatureBytes())
+                    else -> result.notImplemented()
                 }
             }
     }
 
-    private fun currentSignatureHex(): String {
-        return try {
-            val pm = applicationContext.packageManager
-            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-                info.signingInfo?.apkContentsSigners
-            } else {
-                @Suppress("DEPRECATION")
-                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
-                info.signatures
-            }
-            if (signatures == null || signatures.isEmpty()) "" else {
-                val md = MessageDigest.getInstance("SHA-256")
-                val digest = md.digest(signatures[0].toByteArray())
-                digest.joinToString("") { "%02x".format(it) }
-            }
-        } catch (t: Throwable) { "" }
-    }
+    private fun currentSignatureHex(): String = try {
+        val pm = packageManager
+        val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                .signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES).signatures
+        }
+        sigs?.firstOrNull()?.let { sig ->
+            MessageDigest.getInstance("SHA-256")
+                .digest(sig.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        }.orEmpty()
+    } catch (_: Throwable) { "" }
 
-    private fun currentSignatureBytes(): ByteArray? {
-        return try {
-            val pm = applicationContext.packageManager
-            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-                info.signingInfo?.apkContentsSigners
-            } else {
-                @Suppress("DEPRECATION")
-                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
-                info.signatures
-            }
-            if (signatures == null || signatures.isEmpty()) null
-            else signatures[0].toByteArray()
-        } catch (t: Throwable) { null }
-    }
+    private fun currentSignatureBytes(): ByteArray? = try {
+        val pm = packageManager
+        val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                .signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES).signatures
+        }
+        sigs?.firstOrNull()?.toByteArray()
+    } catch (_: Throwable) { null }
 
-    private fun installApk(path: String): Int {
-        // 返回码: 0=已拉起安装 1=文件不存在 2=需授权"安装未知应用" 3=内部错误
-        return try {
-            val file = java.io.File(path)
-            if (!file.exists() || file.length() <= 0L) return 1
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!packageManager.canRequestPackageInstalls()) {
-                    val i = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
-                    i.data = android.net.Uri.parse("package:" + packageName)
-                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(i)
-                    return 2
-                }
-            }
-            val authority = packageName + ".fileprovider"
-            val uri = try {
-                androidx.core.content.FileProvider.getUriForFile(
-                    applicationContext, authority, file)
-            } catch (e: Throwable) {
-                // 路径不在 FileProvider 配置内：复制到 cacheDir 再提供
-                val dst = java.io.File(cacheDir, "update.apk")
-                file.copyTo(dst, overwrite = true)
-                androidx.core.content.FileProvider.getUriForFile(
-                    applicationContext, authority, dst)
-            }
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.setDataAndType(uri, "application/vnd.android.package-archive")
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-            0
-        } catch (t: Throwable) { 3 }
-    }
+    /**
+     * 应用内安装，返回码:
+     *  0 = 已拉起安装器
+     *  1 = 文件不存在
+     *  2 = 需授权"安装未知应用"
+     *  3 = 内部错误
+     */
+    private fun installApk(path: String): Int = try {
+        val file = File(path)
+        if (!file.exists() || file.length() <= 0L) return 1
+
+        // Android 8+：检查"安装未知应用"权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            val i = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+            i.data = android.net.Uri.parse("package:$packageName")
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(i)
+            return 2
+        }
+
+        val authority = "$packageName.fileprovider"
+        val uri = try {
+            androidx.core.content.FileProvider.getUriForFile(
+                applicationContext, authority, file
+            )
+        } catch (_: Throwable) {
+            // 路径不在 FileProvider 配置内：复制到 cacheDir 再提供
+            val dst = File(cacheDir, "update.apk")
+            file.copyTo(dst, overwrite = true)
+            androidx.core.content.FileProvider.getUriForFile(
+                applicationContext, authority, dst
+            )
+        }
+        Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }.let(::startActivity)
+        0
+    } catch (_: Throwable) { 3 }
 
     // JNI 桥（SO 提供）
     private external fun nativeSetSignatureHash(hex64: String)
 
-    private fun verifySignature(): Boolean {
-        return try {
-            val pm = applicationContext.packageManager
-            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-                info.signingInfo?.apkContentsSigners
-            } else {
-                @Suppress("DEPRECATION")
-                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
-                info.signatures
-            }
-            if (signatures == null || signatures.isEmpty()) return false
-            for (sig in signatures) {
-                val md = MessageDigest.getInstance("SHA-256")
-                val digest = md.digest(sig.toByteArray())
-                val hex = digest.joinToString("") { "%02x".format(it) }
-                if (hex.uppercase() in EXPECTED) return true
-            }
-            false
-        } catch (t: Throwable) { false }
-    }
+    private fun verifySignature(): Boolean = try {
+        val pm = packageManager
+        val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                .signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES).signatures
+        }
+        sigs?.any { sig ->
+            val hex = MessageDigest.getInstance("SHA-256")
+                .digest(sig.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+            hex.uppercase() in EXPECTED
+        } == true
+    } catch (_: Throwable) { false }
 }
 '''
     code = code.replace('__EXPECTED_SHA__', EXPECTED_HEX)

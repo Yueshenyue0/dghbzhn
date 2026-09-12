@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'mail_api.dart';
+import 'device_security.dart';
 import 'pages/generator_page.dart';
 import 'pages/inbox_page.dart';
 import 'update_service.dart';
@@ -48,6 +49,29 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _bootstrap() async {
+    // 设备安全检测（最优先）
+    final safe = await DeviceSecurity.check();
+    if (!safe && mounted) {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: const Text('环境异常'),
+            content: const Text('检测到 Root / Hook / Frida / 模拟器环境，为保护数据安全，应用将退出。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('退出'),
+              ),
+            ],
+          ),
+        ),
+      );
+      return; // 不继续初始化
+    }
+
     final token = await MailApi.instance.loadToken();
     final addr = await MailApi.instance.loadAddress();
     if (!mounted) return;

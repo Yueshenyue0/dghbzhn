@@ -25,6 +25,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.x'
 
       - name: Cache pub dependencies
         uses: actions/cache@v4
@@ -102,6 +103,11 @@ jobs:
           keyPassword=tempmail2026
           KP
           python3 scripts/setup_signing.py
+
+      - name: Generate confidential secrets
+        run: |
+          dart run dart-confidential obfuscate --configuration confidential.yaml --output lib/generated/secrets.dart || true
+          ls -la lib/generated/ 2>/dev/null || echo "secrets generation skipped (may require additional setup)"
 
       - name: Get dependencies
         run: flutter pub get

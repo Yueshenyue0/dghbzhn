@@ -88,8 +88,8 @@ class MailApi {
       q.write(q.isEmpty ? '?' : '&');
       q.write('count=$count');
     }
-    return _req('GET', apiUrl('/inbox/$addr', query: q.toString()),
-        token: token, timeout: const Duration(seconds: 40));
+    final url = apiUrl('/inbox/$addr', query: q.toString());
+    return _req('GET', url, token: token, timeout: const Duration(seconds: 40));
   }
 
   Future<Map<String, dynamic>> waitDomain(String domain,
