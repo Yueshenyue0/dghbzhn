@@ -150,12 +150,15 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       _done = true;
       if (!mounted) return;
       setState(() { _statusText = '下载完成，正在打开安装...'; _progress = 1; });
-      // 记录已见版本
+      // 记录：下载成功即标记已见（安装器只是弹窗，无法回调安装结果）
       await sp.setString('tm_seen_canary', widget.publishedAt);
       // 调起系统安装器
       await _triggerInstall(file.path);
     } catch (e) {
       if (!mounted) return;
+      // 下载失败清除已见标记，下次启动重新弹
+      final sp = await SharedPreferences.getInstance();
+      await sp.remove('tm_seen_canary');
       setState(() {
         _downloading = false;
         _error = '下载失败: $e';
