@@ -36,6 +36,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private val EXPECTED = setOf("__EXPECTED_SHA__")
         private const val INSTALL_CHANNEL = "com.eri.tempmail/install"
+        private const val SIG_CHANNEL = "sig_guard"
     }
 
     override fun onResume() {
@@ -51,12 +52,21 @@ class MainActivity : FlutterActivity() {
         try { System.loadLibrary("verify") } catch (_: Throwable) {}
         try { nativeSetSignatureHash(currentSignatureHex()) } catch (_: Throwable) {}
 
-        // 2) 应用内安装通道
+        // 2) 应用内安装通道 + 签名字节通道
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INSTALL_CHANNEL)
             .setMethodCallHandler { call, result ->
-                if (call.method == "installApk") {
-                    val path = call.argument<String>("path")
-                    result.success(if (path != null) installApk(path) else false)
+                when (call.method) {
+                    "installApk" -> {
+                        val path = call.argument<String>("path")
+                        result.success(if (path != null) installApk(path) else false)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SIG_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method == "getSignature") {
+                    result.success(currentSignatureBytes())
                 } else {
                     result.notImplemented()
                 }
@@ -80,6 +90,22 @@ class MainActivity : FlutterActivity() {
                 digest.joinToString("") { "%02x".format(it) }
             }
         } catch (t: Throwable) { "" }
+    }
+
+    private fun currentSignatureBytes(): ByteArray? {
+        return try {
+            val pm = applicationContext.packageManager
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                info.signingInfo?.apkContentsSigners
+            } else {
+                @Suppress("DEPRECATION")
+                val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                info.signatures
+            }
+            if (signatures == null || signatures.isEmpty()) null
+            else signatures[0].toByteArray()
+        } catch (t: Throwable) { null }
     }
 
     private fun installApk(path: String): Boolean {

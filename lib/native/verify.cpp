@@ -389,3 +389,44 @@ void Java_com_eri_tempmail_MainActivity_nativeSetSignatureHash(
   }
 }
 #endif
+
+// Dart 侧直接取派生密钥（用 Kotlin 已存入的签名哈希），无需再传参
+extern "C"
+__attribute__((visibility("default"))) const char*
+derive_token_key_from_saved() {
+  static unsigned char key[9];
+  if (g_sig_hash.size() != 64) {
+    // 签名未注入：返回假密钥
+    for (int i = 0; i < 8; i++) key[i] = (unsigned char)(TOKEN_KEY_ENC[i] ^ SIGKEY_XOR ^ 0xA5);
+    key[8] = 0;
+    return (const char*)key;
+  }
+  unsigned char digest[32];
+  for (int i = 0; i < 32; i++) {
+    char b[3] = { g_sig_hash[i*2], g_sig_hash[i*2+1], 0 };
+    digest[i] = (unsigned char)strtol(b, nullptr, 16);
+  }
+  unsigned char expected[32];
+  for (int i = 0; i < 32; i++) expected[i] = SIG_ENC[i] ^ SIGXOR;
+  unsigned char diff = 0;
+  for (int i = 0; i < 32; i++) diff |= digest[i] ^ expected[i];
+  for (int i = 0; i < 8; i++) key[i] = TOKEN_KEY_ENC[i] ^ SIGKEY_XOR;
+  if (diff != 0) { for (int i = 0; i < 8; i++) key[i] ^= 0xA5; }
+  key[8] = 0;
+  return (const char*)key;
+}
+
+// ==================== verified_token: 签名绑定 token 的唯一出口 ====================
+// 入参: sha256(签名DER) 32字节。SO 内比对混淆存储的官方指纹（SIG_ENC^SIGXOR）。
+// 匹配 -> 返回真 token；不匹配 -> 返回空串。
+extern "C"
+__attribute__((visibility("default")))
+const char* verified_token(const unsigned char* digest32) {
+  if (!digest32) return "";
+  unsigned char expected[32];
+  for (int i = 0; i < 32; i++) expected[i] = SIG_ENC[i] ^ SIGXOR;
+  unsigned char diff = 0;
+  for (int i = 0; i < 32; i++) diff |= digest32[i] ^ expected[i];
+  if (diff != 0) return "";
+  return embedded_token();
+}

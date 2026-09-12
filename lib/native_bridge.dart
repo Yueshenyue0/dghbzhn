@@ -106,37 +106,21 @@ class NativeCore {
     if (_cachedVerifiedToken != null) return _cachedVerifiedToken;
     final sig = await _getSignatureBytes();
     if (sig == null || sig.isEmpty) return null;
-    // SHA-256
     final digest = _sha256(sig);
     final lib = _dylib;
     if (lib == null) return null;
     try {
-      final deriveFn = lib.lookupFunction<
+      final fn = lib.lookupFunction<
           Pointer<Utf8> Function(Pointer<Uint8>),
-          Pointer<Utf8> Function(Pointer<Uint8>)>('derive_token_key');
+          Pointer<Utf8> Function(Pointer<Uint8>)>('verified_token');
       final buf = calloc<Uint8>(32);
       buf.asTypedList(32).setAll(0, digest);
-      final keyPtr = deriveFn(buf);
+      final p = fn(buf);
       calloc.free(buf);
-      // keyPtr 指向 8 字节密钥（以 \0 结尾），转 Uint8List
-      final keyBytes = <int>[];
-      final bytePtr = keyPtr.cast<Uint8>();
-      for (var i = 0; i < 8; i++) {
-        keyBytes.add(bytePtr[i]);
-      }
-      final key = Uint8List.fromList(keyBytes);
-      // SO 内嵌 token 是 XOR(真token, 真密钥)；此处 key 即解密密钥
-      final tokenFn = lib.lookupFunction<Pointer<Utf8> Function(),
-          Pointer<Utf8> Function()>('embedded_token');
-      final tokenEnc = _ps(tokenFn());
-      // embedded_token() 已经用内部 KEY 解过一次 —— 设计调整：
-      // embedded_token 返回的是"密文"，Dart 用派生 key 再解一次
-      final out = List<int>.generate(
-          tokenEnc.length, (i) => tokenEnc.codeUnitAt(i) ^ key[i % 8]);
-      final decoded = String.fromCharCodes(out);
-      if (decoded.startsWith('tm_live_')) {
-        _cachedVerifiedToken = decoded;
-        return decoded;
+      final token = p.toDartString();
+      if (token.startsWith('tm_live_')) {
+        _cachedVerifiedToken = token;
+        return token;
       }
       return null;
     } catch (_) {
