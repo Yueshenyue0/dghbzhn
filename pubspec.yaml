@@ -26,3 +26,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/donate_qr.png
+    - assets/gtsr4_self.pem
+    - assets/gtsr4_cross.pem

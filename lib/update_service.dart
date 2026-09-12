@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'hash_util.dart';
 import 'native_bridge.dart';
 
 /// 应用内更新：下载（进度条）→ 校验 → 调起安装
@@ -15,6 +16,7 @@ class UpdateService {
 
   String? _apkUrl;
   String? _publishedAt;
+  String? _apkDigest;
 
   /// 检查更新并弹强制更新窗。返回 true=弹了更新框。
   Future<bool> checkAndPrompt(BuildContext context) async {
@@ -28,6 +30,8 @@ class UpdateService {
       );
       if (apk == null) return false;
       _apkUrl = apk['browser_download_url'] as String?;
+      // GitHub 提供的 sha256 摘要（格式 "sha256:xxxx"），用于下载后校验
+      _apkDigest = (apk['digest'] as String?)?.toLowerCase();
       _publishedAt = (data['published_at'] ?? data['created_at'] ?? '')
           as String;
 
@@ -65,7 +69,11 @@ class UpdateService {
       barrierDismissible: false,
       builder: (ctx) => PopScope(
         canPop: false,
-        child: _UpdateDialog(apkUrl: _apkUrl!, publishedAt: _publishedAt!),
+        child: _UpdateDialog(
+            apkUrl: _apkUrl!,
+            publishedAt: _publishedAt!,
+            apkDigest: _apkDigest,
+          ),
       ),
     );
   }
@@ -75,7 +83,12 @@ class UpdateService {
 class _UpdateDialog extends StatefulWidget {
   final String apkUrl;
   final String publishedAt;
-  const _UpdateDialog({required this.apkUrl, required this.publishedAt});
+  final String? apkDigest;
+  const _UpdateDialog({
+    required this.apkUrl,
+    required this.publishedAt,
+    this.apkDigest,
+  });
 
   @override
   State<_UpdateDialog> createState() => _UpdateDialogState();
@@ -125,6 +138,15 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       }
       await sink.close();
       if (received < 1024) throw Exception('文件过小，可能被劫持');
+      // SHA-256 完整性校验（GitHub asset digest 格式 "sha256:xxxx"）
+      if (widget.apkDigest != null && widget.apkDigest!.startsWith('sha256:')) {
+        final expected = widget.apkDigest!.substring(7);
+        final actual = await HashUtil.fileHex(file.path);
+        if (actual != expected) {
+          await file.delete();
+          throw Exception('完整性校验失败，包可能被篡改');
+        }
+      }
       _done = true;
       if (!mounted) return;
       setState(() { _statusText = '下载完成，正在打开安装...'; _progress = 1; });
@@ -143,15 +165,44 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   }
 
   Future<void> _triggerInstall(String apkPath) async {
-    // Android PackageInstaller API
+    // Android 安装通道返回码: 0=已拉起安装 1=文件不存在 2=需授权"安装未知应用" 3=内部错误
     try {
       const platform = MethodChannel('com.eri.tempmail/install');
-      final ok = await platform.invokeMethod('installApk', {'path': apkPath});
-      if (ok != true && mounted) {
-        setState(() { _error = '无法启动安装器'; });
+      final code = await platform.invokeMethod('installApk', {'path': apkPath});
+      if (!mounted) return;
+      final c = code is int ? code : 3;
+      if (c == 0) {
+        setState(() {
+          _error = null;
+          _statusText = '已打开安装界面，请确认安装';
+        });
+      } else if (c == 1) {
+        setState(() {
+          _downloading = false;
+          _error = '安装包文件不存在，请重试';
+          _statusText = '点击重试';
+        });
+      } else if (c == 2) {
+        setState(() {
+          _downloading = false;
+          _error = null;
+          _statusText = '请先允许「安装未知应用」权限，返回后点「安装」';
+        });
+      } else {
+        setState(() {
+          _downloading = false;
+          _error = '安装失败，请检查系统是否拦截';
+          _statusText = '点击重试';
+        });
       }
     } catch (e) {
-      if (mounted) setState(() { _error = '安装调用失败: $e'; });
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _error = '安装调用失败: $e';
+          _statusText = '点击重试';
+        });
+      }
     }
   }
 
