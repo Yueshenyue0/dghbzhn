@@ -26,8 +26,14 @@ class UpdateService {
       );
       if (apk == null) return false;
       _apkUrl = apk['browser_download_url'] as String?;
-      _publishedAt =
-          (data['published_at'] ?? data['created_at'] ?? '') as String;
+      // 用 asset 的 updated_at 作为版本标识：
+      // Canary 是编辑式 release，published_at 永远是首发时间不会变，
+      // 而每次 CI 上传新包都会刷新 asset 的 updated_at —— 用它才能可靠检测更新
+      _publishedAt = (apk['updated_at'] ??
+              data['published_at'] ??
+              data['created_at'] ??
+              '')
+          as String;
 
       final sp = await SharedPreferences.getInstance();
       final seen = sp.getString('tm_seen_canary');
