@@ -14,36 +14,88 @@ class UpdateService {
 
   String? _apkUrl;
   String? _publishedAt;
+  String _lastError = '';
+
+  /// 上次检查的错误描述（空 = 成功）
+  String get lastError => _lastError;
 
   Future<bool> checkAndPrompt(BuildContext context) async {
     try {
       final data = await _fetchRelease();
-      if (data == null) return false;
+      if (data == null) {
+        // 检查失败也要弹窗告知（此前静默跳过 = "没有弹窗"）
+        if (!context.mounted) return false;
+        await _showCheckFailedDialog(context);
+        return true;
+      }
       final assets = data['assets'] as List? ?? [];
       final apk = assets.firstWhere(
         (a) => (a['name'] as String? ?? '').endsWith('.apk'),
         orElse: () => null,
       );
-      if (apk == null) return false;
+      if (apk == null) {
+        _lastError = 'Canary 里没有 APK 文件';
+        if (!context.mounted) return false;
+        await _showCheckFailedDialog(context);
+        return true;
+      }
       _apkUrl = apk['browser_download_url'] as String?;
-      // 用 asset 的 updated_at 作为版本标识：
-      // Canary 是编辑式 release，published_at 永远是首发时间不会变，
-      // 而每次 CI 上传新包都会刷新 asset 的 updated_at —— 用它才能可靠检测更新
+      // 用 asset 的 updated_at 作为版本标识（Canary published_at 恒定不变）
       _publishedAt = (apk['updated_at'] ??
               data['published_at'] ??
               data['created_at'] ??
               '')
           as String;
 
+      // 与本地已见版本比较（下载成功后才记录）；每次启动都会重新检测
       final sp = await SharedPreferences.getInstance();
       final seen = sp.getString('tm_seen_canary');
-      if (seen == _publishedAt) return false;
+      if (seen == _publishedAt) {
+        // 已是最新：不弹强制框（手动检查时由 about 页给反馈）
+        _lastError = '';
+        return false;
+      }
       if (!context.mounted) return false;
       await _showForceDialog(context);
       return true;
-    } catch (_) {
-      return false;
+    } catch (e) {
+      _lastError = '$e';
+      if (context.mounted) await _showCheckFailedDialog(context);
+      return true;
     }
+  }
+
+  /// 检查失败弹窗：显示原因，可重试或跳过
+  Future<void> _showCheckFailedDialog(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('更新检查失败'),
+          content: Text(
+            '无法连接更新服务器。\n'
+            '$_lastError\n\n'
+            '（分身/隔离空间常限制网络与后台请求，可尝试跳过）',
+            style: const TextStyle(fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('跳过'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                if (context.mounted) await checkAndPrompt(context);
+              },
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<Map<String, dynamic>?> _fetchRelease() async {
@@ -54,10 +106,15 @@ class UpdateService {
       req.headers.set('Accept', 'application/vnd.github+json');
       req.headers.set('User-Agent', 'tempmail-app');
       final resp = await req.close().timeout(const Duration(seconds: 15));
-      if (resp.statusCode != 200) return null;
+      if (resp.statusCode != 200) {
+        _lastError = '服务器返回 HTTP ${resp.statusCode}';
+        return null;
+      }
       final body = await resp.transform(utf8.decoder).join();
+      _lastError = '';
       return jsonDecode(body) as Map<String, dynamic>;
-    } catch (_) {
+    } catch (e) {
+      _lastError = '网络请求失败: $e';
       return null;
     }
   }

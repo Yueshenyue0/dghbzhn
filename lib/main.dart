@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'mail_api.dart';
 import 'device_security.dart';
 import 'proxy_guard.dart';
+import 'clone_guard.dart';
 import 'pages/generator_page.dart';
 import 'pages/inbox_page.dart';
 import 'update_service.dart';
@@ -64,10 +65,13 @@ class _HomePageState extends State<HomePage> {
     final safe = await DeviceSecurity.check();
     // 抓包检测：本机特征代理端口（Charles/Burp/Fiddler/mitmproxy/HttpCanary）
     final noProxy = await ProxyGuard.check();
-    if ((!safe || !noProxy) && mounted) {
+    // 分身/虚拟化容器检测（VirtualApp 类框架会重定向数据目录、改写进程身份）
+    final noClone = await CloneGuard.check();
+    if ((!safe || !noProxy || !noClone) && mounted) {
       final detail = <String>[];
       if (!safe) detail.add(DeviceSecurity.debugInfo);
       if (!noProxy) detail.add('检测到抓包代理：${ProxyGuard.reason}');
+      if (!noClone) detail.add('检测到分身/虚拟环境：${CloneGuard.hits.join("；")}');
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
@@ -77,7 +81,7 @@ class _HomePageState extends State<HomePage> {
           child: AlertDialog(
             title: const Text('环境异常'),
             content: Text(
-              '检测到设备存在 Root / Hook 框架或抓包代理，应用无法继续运行。\n\n'
+              '检测到 Root / Hook / 抓包代理 / 分身虚拟环境，应用无法继续运行。\n\n'
               '${detail.where((s) => s.isNotEmpty).join("\n")}',
             ),
             actions: [

@@ -40,9 +40,21 @@ class DeviceSecurity {
         ThreatCategory.runtimeManipulation,
         ThreatCategory.integrityViolation,
       };
-      final realThreats = report.detectedThreats
-          .where((t) => t.severity == Severity.critical && blockedCats.contains(t.category))
-          .toList();
+      final realThreats = report.detectedThreats.where((t) {
+        // 1) critical 级真威胁：root / hook / 重打包
+        if (t.severity == Severity.critical && blockedCats.contains(t.category)) {
+          return true;
+        }
+        // 2) analysisEnvironment 的 high 级 = 真模拟器特征
+        //    (Build 指纹 generic/ranchu、QEMU 属性、genyd 文件、模拟器号码)
+        //    VMOS / 安卓虚拟机类分身必命中；真机开 VPN/ADB 不会走到这里
+        //    （VPN 是 info，开发者模式归 debuggerAttached）
+        if (t.category == ThreatCategory.analysisEnvironment &&
+            (t.severity == Severity.high || t.severity == Severity.critical)) {
+          return true;
+        }
+        return false;
+      }).toList();
       debugPrint('[SECURITY] all: ${report.detectedThreats.map((t) => '${t.category.name}/${t.severity.name}').join(', ')}');
       debugPrint('[SECURITY] blocked: ${realThreats.map((t) => t.category.name).join(', ')}');
       if (realThreats.isNotEmpty) {

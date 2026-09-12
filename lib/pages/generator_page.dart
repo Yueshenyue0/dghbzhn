@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../mail_api.dart';
 import '../native_bridge.dart';
+import '../update_service.dart';
 
 /// Tab1: 生成邮箱（随机/自定义）
 class GeneratorPage extends StatefulWidget {
@@ -170,12 +172,29 @@ class _GeneratorPageState extends State<GeneratorPage> {
   }
 }
 
-/// 关于页：作者 + 赞赏码
+/// 关于页：作者 + 原生核心状态 + 检查更新 + 赞赏码
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
+  /// 手动检查更新：清掉已见标记强制走一遍检测流程，
+  /// 分身/隔离空间里失败会直接弹出原因（不再静默）
+  Future<void> _manualCheck(BuildContext context) async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.remove('tm_seen_canary');
+    } catch (_) {}
+    if (!context.mounted) return;
+    final prompted = await UpdateService.instance.checkAndPrompt(context);
+    if (!prompted && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前已是最新版本')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final native = NativeCore.instance.nativeVersion();
     return Scaffold(
       appBar: AppBar(title: const Text('关于')),
       body: ListView(
@@ -188,13 +207,18 @@ class AboutPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Center(
-            child: Builder(builder: (_) {
-              final v = NativeCore.instance.nativeVersion();
-              return Text(
-                v == null ? 'native core: 未加载（降级模式）' : 'native core: v$v',
-                style: Theme.of(context).textTheme.bodySmall,
-              );
-            }),
+            child: Text(
+              native == null ? 'native core: 未加载（降级模式）' : 'native core: v$native',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: () => _manualCheck(context),
+              icon: const Icon(Icons.system_update_alt),
+              label: const Text('检查更新'),
+            ),
           ),
           const SizedBox(height: 24),
           Card(
