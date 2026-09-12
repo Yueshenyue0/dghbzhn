@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'mail_api.dart';
 import 'device_security.dart';
+import 'proxy_guard.dart';
 import 'pages/generator_page.dart';
 import 'pages/inbox_page.dart';
 import 'update_service.dart';
@@ -48,28 +50,47 @@ class _HomePageState extends State<HomePage> {
     _bootstrap();
   }
 
+  /// 强制退出：先 SystemNavigator，1 秒兜底 kill 进程
+  void _forceExit() {
+    SystemNavigator.pop();
+    Future.delayed(const Duration(seconds: 1), () {
+      exit(0); // dart:io，杀掉进程，不给返回机会
+    });
+  }
+
   Future<void> _bootstrap() async {
-    // 设备安全检测（最优先）
+    // 设备安全检测（最优先）：只拦 Root/Hook/重打包，忽略 VPN/开发者模式/侧载
     final safe = await DeviceSecurity.check();
-    if (!safe && mounted) {
+    // 抓包检测：本机特征代理端口（Charles/Burp/Fiddler/mitmproxy/HttpCanary）
+    final noProxy = await ProxyGuard.check();
+    if ((!safe || !noProxy) && mounted) {
+      final detail = <String>[];
+      if (!safe) detail.add(DeviceSecurity.debugInfo);
+      if (!noProxy) detail.add('检测到抓包代理：${ProxyGuard.reason}');
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => PopScope(
           canPop: false,
+          onPopInvokedWithResult: (_, __) => _forceExit(),
           child: AlertDialog(
             title: const Text('环境异常'),
-            content: const Text('检测到 Root / Hook / Frida / 模拟器环境，为保护数据安全，应用将退出。'),
+            content: Text(
+              '检测到设备存在 Root / Hook 框架或抓包代理，应用无法继续运行。\n\n'
+              '${detail.where((s) => s.isNotEmpty).join("\n")}',
+            ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('退出'),
+                onPressed: _forceExit,
+                child: const Text('确定'),
               ),
             ],
           ),
         ),
       );
-      return; // 不继续初始化
+      // 理论上不会走到这里；兜底再杀一次
+      _forceExit();
+      return;
     }
 
     final token = await MailApi.instance.loadToken();
