@@ -14,7 +14,7 @@ dependencies:
   ffi: ^2.1.3
   url_launcher: ^6.3.0
   webview_flutter: ^4.10.0
-  advanced_root_detection: ^0.0.5
+  advance_root_detection: ^0.0.5
 
 dev_dependencies:
   flutter_test:

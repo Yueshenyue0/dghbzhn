@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:advanced_root_detection/advanced_root_detection.dart';
+import 'package:advance_root_detection/advance_root_detection.dart';
 
 /// 设备安全检测：Frida / Xposed / Root / Hook / Emulator
 /// 检测到危险环境时弹警告并退出
@@ -12,14 +12,13 @@ class DeviceSecurity {
     if (_checked) return true;
     _checked = true;
     try {
-      final result = await AdvancedRootDetection.instance.detect();
-      if (result.isRooted ||
-          result.isHooked ||
-          result.isFridaDetected ||
-          result.isEmulator) {
+      final shield = AdvanceRootDetection();
+      final report = await shield.performCheck();
+      if (report.hasCriticalThreat || report.isPrivilegedAccess || report.isRuntimeManipulated) {
         debugPrint('[SECURITY] threat detected: '
-            'root=${result.isRooted} hook=${result.isHooked} '
-            'frida=${result.isFridaDetected} emu=${result.isEmulator}');
+            'privileged=${report.isPrivilegedAccess} '
+            'hooked=${report.isRuntimeManipulated} '
+            'critical=${report.hasCriticalThreat}');
         return false;
       }
       return true;
